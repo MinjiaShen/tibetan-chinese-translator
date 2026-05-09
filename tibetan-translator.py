@@ -344,7 +344,7 @@ function startRec() {
   RC = initRec();
   if (!RC) return;
   rec = true;
-  try { RC.start(); ts('🎙️ 开始监听藏语语音'); } catch (e) { rec = false; setStatus('error', '启动失败'); }
+  try { RC.start(); ts('🎙️ 开始监听藏语语音'); } catch (e) { rec = false; ss('err', '启动失败'); }
 }
 function stopRec() {
   rec = false;

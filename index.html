@@ -129,7 +129,7 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
   </div>
 </div>
 
-<div class="ft">藏语→中文实时翻译 · v2.1</div>
+<div class="ft">藏语→中文实时翻译 · 桌面版 v2.1</div>
 <div class="tst" id="tst"></div>
 
 <script>
@@ -301,7 +301,7 @@ function startRec() {
   RC = initRec();
   if (!RC) return;
   rec = true;
-  try { RC.start(); ts('🎙️ 开始监听藏语语音'); } catch (e) { rec = false; }
+  try { RC.start(); ts('🎙️ 开始监听藏语语音'); } catch (e) { rec = false; ss('err', '启动失败'); }
 }
 function stopRec() {
   rec = false;
