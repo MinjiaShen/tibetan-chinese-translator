@@ -35,6 +35,8 @@ import signal
 import sys
 import os
 import socket
+import time
+import subprocess
 import base64
 
 # ============================================================
@@ -563,7 +565,6 @@ def main():
         t.start()
 
         # 等待服务器就绪（最多 2 秒）
-        import time
         for _ in range(20):
             try:
                 with socket.create_connection(('127.0.0.1', port), timeout=0.1):
@@ -580,7 +581,6 @@ def main():
 
         if not opened:
             # 回退：尝试系统命令直接打开
-            import subprocess
             try:
                 if sys.platform == 'darwin':
                     subprocess.Popen(['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
