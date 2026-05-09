@@ -6,6 +6,7 @@
 
 ## 📋 目录
 
+- [快速安装](#快速安装)
 - [项目简介](#项目简介)
 - [功能特性](#功能特性)
 - [系统要求](#系统要求)
@@ -16,6 +17,81 @@
 - [常见问题](#常见问题)
 - [已知限制](#已知限制)
 - [更新日志](#更新日志)
+
+---
+
+## 快速安装
+
+> **前提条件：** Python 3.8+（macOS 自带，Windows/Linux 需自行安装）
+
+### 🚀 一键安装（推荐）
+
+**macOS / Linux：**
+
+```bash
+curl -sL https://raw.githubusercontent.com/MinjiaShen/tibetan-chinese-translator/main/install.sh | bash
+```
+
+脚本会自动下载到 `~/tibetan-translator/`，安装完成后询问是否立即启动。
+
+### 📋 手动安装
+
+**macOS / Linux：**
+
+```bash
+# 1. 下载
+curl -o tibetan-translator.py https://raw.githubusercontent.com/MinjiaShen/tibetan-chinese-translator/main/tibetan-translator.py
+
+# 2. 运行
+python3 tibetan-translator.py
+
+# 3. 浏览器自动打开，开始使用
+# 4. 退出: Ctrl+C
+```
+
+**Windows（PowerShell）：**
+
+```powershell
+# 1. 下载
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/MinjiaShen/tibetan-chinese-translator/main/tibetan-translator.py" -OutFile "tibetan-translator.py"
+
+# 2. 运行
+python tibetan-translator.py
+```
+
+**Windows（CMD）：**
+
+```cmd
+:: 1. 下载
+curl -o tibetan-translator.py https://raw.githubusercontent.com/MinjiaShen/tibetan-chinese-translator/main/tibetan-translator.py
+
+:: 2. 双击 tibetan-translator.py 运行，或在 CMD 中：
+python tibetan-translator.py
+```
+
+### 📦 Git Clone
+
+```bash
+git clone https://github.com/MinjiaShen/tibetan-chinese-translator.git
+cd tibetan-chinese-translator
+python3 tibetan-translator.py
+```
+
+### ✅ 运行成功标志
+
+```
+  ╔══════════════════════════════════════╗
+  ║  🏔️  藏语→中文 实时翻译  桌面版 v2.1 ║
+  ╠══════════════════════════════════════╣
+  ║  地址: http://127.0.0.1:9090        ║
+  ║  状态: ✅ 运行中                      ║
+  ║  退出: Ctrl+C                        ║
+  ╚══════════════════════════════════════╝
+
+  ✅ 已在浏览器中打开翻译页面
+```
+
+> 浏览器没有自动打开？手动访问 `http://127.0.0.1:9090`
 
 ---
 
