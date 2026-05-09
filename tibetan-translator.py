@@ -562,12 +562,42 @@ def main():
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
 
-        # 打开浏览器
+        # 等待服务器就绪（最多 2 秒）
+        import time
+        for _ in range(20):
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=0.1):
+                    break
+            except OSError:
+                time.sleep(0.1)
+
+        # 打开浏览器（检查返回值 + 多种回退方式）
+        opened = False
         try:
-            webbrowser.open(url)
-            print("  ✅ 已在浏览器中打开翻译页面")
+            opened = webbrowser.open(url)
         except Exception:
-            print(f"  ⚠️  请手动打开: {url}")
+            pass
+
+        if not opened:
+            # 回退：尝试系统命令直接打开
+            import subprocess
+            try:
+                if sys.platform == 'darwin':
+                    subprocess.Popen(['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    opened = True
+                elif sys.platform == 'win32':
+                    os.startfile(url)
+                    opened = True
+                elif sys.platform.startswith('linux'):
+                    subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    opened = True
+            except Exception:
+                pass
+
+        if opened:
+            print("  ✅ 已在浏览器中打开翻译页面")
+        else:
+            print(f"  ⚠️  浏览器未自动打开，请手动访问: {url}")
 
         print()
         print("  功能:")
