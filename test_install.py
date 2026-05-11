@@ -69,6 +69,10 @@ class TestInstallContent(unittest.TestCase):
         self.assertTrue(self.content.startswith("#!/bin/bash"),
                         "Script should start with #!/bin/bash shebang")
 
+    def test_has_sha256_verification(self):
+        """验证安装脚本包含 SHA-256 完整性校验"""
+        self.assertIn('sha256', self.content.lower())
+
 
 if __name__ == "__main__":
     unittest.main()

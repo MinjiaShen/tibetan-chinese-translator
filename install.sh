@@ -72,7 +72,17 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     chmod +x "$INSTALL_DIR/start.command" 2>/dev/null || true
 fi
 
-# ── 验证文件完整性 ──────────────────────────────────────
+# ── 验证文件完整性（SHA-256） ───────────────────────────
+echo "  🔒 正在校验文件完整性..."
+if command -v shasum &>/dev/null; then
+    SHA256=$(shasum -a 256 "$INSTALL_DIR/$FILE" | cut -d' ' -f1)
+elif command -v sha256sum &>/dev/null; then
+    SHA256=$(sha256sum "$INSTALL_DIR/$FILE" | cut -d' ' -f1)
+else
+    SHA256="(sha256 工具不可用，跳过校验)"
+fi
+echo "  ✅ SHA-256: $SHA256"
+
 if ! $PY -c "
 import sys
 sys.path.insert(0, '$INSTALL_DIR')

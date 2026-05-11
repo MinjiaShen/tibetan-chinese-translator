@@ -38,6 +38,7 @@ import socket
 import time
 import subprocess
 import base64
+import argparse
 
 # ============================================================
 #  藏语→中文 实时翻译 — 完整网页 (内嵌)
@@ -132,8 +133,11 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
 <body>
 
 <div class="hd">
-  <div class="logo"><i>🏔️</i><span>藏语→中文 实时翻译</span></div>
-  <div class="sp" id="sp" role="status" aria-label="连接状态：就绪"><b></b><span id="st">就绪</span></div>
+  <div class="logo"><i>🏔️</i><span id="langTitle">藏语→中文 实时翻译</span></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="langSwitch" onclick="switchLang()" style="background:transparent;border:1px solid var(--bd);color:var(--tx2);padding:4px 10px;border-radius:var(--rs);cursor:pointer;font-size:16px;transition:all .2s" title="切换翻译方向">⇄</button>
+    <div class="sp" id="sp" role="status" aria-label="连接状态：就绪"><b></b><span id="st">就绪</span></div>
+  </div>
 </div>
 
 <div class="tb" role="tablist" aria-label="翻译模式选择">
@@ -190,6 +194,10 @@ const CACHE_MAX = 500; // localStorage 缓存上限
 let qVersion = 0; // 翻译队列版本号，切换标签页时递增取消旧任务
 let tesseractLoaded = false; // Tesseract.js 延迟加载标志
 let tesseractLoading = null; // Promise 锁，防止并发加载
+let langDirection = 'bo2zh'; // 翻译方向: bo2zh 或 zh2bo
+const tqInFlight = new Set(); // 在途翻译任务追踪，防止重复入队
+let langDirection = 'bo2zh'; // 翻译方向: bo2zh 或 zh2bo
+const tqInFlight = new Set(); // 在途翻译任务追踪，防止重复入队
 
 // ============================================================
 //  Cache Persistence — localStorage 持久化翻译缓存
@@ -217,6 +225,59 @@ function saveCache() {
 }
 // 初始化时加载缓存
 loadCache();
+
+// ============================================================
+//  LRU Cache — I-2: 访问时移到 Map 末尾
+// ============================================================
+function lruGet(key) {
+  if (!tc.has(key)) return undefined;
+  const value = tc.get(key);
+  tc.delete(key);
+  tc.set(key, value);
+  return value;
+}
+
+// ============================================================
+//  Text Splitting — I-3: 大文本按藏文句末标点分段
+// ============================================================
+function splitText(text, maxLen = 4000) {
+  if (text.length <= maxLen) return [text];
+  const segments = [];
+  const parts = text.split(/(?<=།)\s*/);
+  let current = '';
+  for (const part of parts) {
+    if ((current + part).length > maxLen && current) {
+      segments.push(current.trim());
+      current = part;
+    } else {
+      current += (current ? ' ' : '') + part;
+    }
+  }
+  if (current.trim()) segments.push(current.trim());
+  return segments.length ? segments : [text];
+}
+
+// ============================================================
+//  Language Direction — F-1: 切换翻译方向
+// ============================================================
+function switchLang() {
+  langDirection = langDirection === 'bo2zh' ? 'zh2bo' : 'bo2zh';
+  const title = $('langTitle');
+  const ki = $('ki');
+  if (langDirection === 'bo2zh') {
+    title.textContent = '藏语→中文 实时翻译';
+    ki.placeholder = '在此输入或粘贴藏文…';
+    ki.style.fontFamily = '"Noto Sans Tibetan","Microsoft Himalaya",serif';
+  } else {
+    title.textContent = '中文→藏语 实时翻译';
+    ki.placeholder = '在此输入或粘贴中文…';
+    ki.style.fontFamily = '-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif';
+  }
+  // 切换方向时清空翻译缓存
+  tc.clear();
+  try { localStorage.removeItem(CACHE_KEY); } catch (_) {}
+  ts('已切换为 ' + (langDirection === 'bo2zh' ? '藏语→中文' : '中文→藏语'));
+}
 
 // ============================================================
 //  Toast & Status
@@ -288,7 +349,7 @@ function clr(c) {
 
 // ============================================================
 //  Translation Engine (Google only — MyMemory removed)
-//  v2.1: 添加 10s 超时，移除不可靠的 MyMemory
+//  v2.2: 添加 10s 超时，移除不可靠的 MyMemory
 // ============================================================
 async function translateGoogle(text, timeout = 10000) {
   const maxRetries = 2;
@@ -296,8 +357,10 @@ async function translateGoogle(text, timeout = 10000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
+      const sl = langDirection === 'bo2zh' ? 'bo' : 'zh-CN';
+      const tl = langDirection === 'bo2zh' ? 'zh-CN' : 'bo';
       const r = await fetch(
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=bo&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`,
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`,
         { signal: controller.signal }
       );
       if (!r.ok) throw new Error('Google HTTP ' + r.status);
@@ -319,7 +382,7 @@ async function translateGoogle(text, timeout = 10000) {
 async function translate(text) {
   if (!text.trim()) return { text: '', src: 'none' };
   const key = text.trim();
-  if (tc.has(key)) return { text: tc.get(key), src: 'cache' };
+  if (tc.has(key)) return { text: lruGet(key), src: 'cache' };
 
   const t = await translateGoogle(text);
   tc.set(key, t);
@@ -335,6 +398,8 @@ async function pq() {
   while (tq.length) {
     if (ver !== qVersion) { tq.length = 0; break; }
     const { text, container } = tq.shift();
+    const inKey = `${container}:${text}`;
+    tqInFlight.add(inKey);
     try {
       const r = await translate(text);
       if (ver !== qVersion) break;
@@ -342,13 +407,16 @@ async function pq() {
     } catch (e) {
       console.warn('Translation failed:', e);
       ts('翻译失败：' + (e.message || '网络异常'));
+    } finally {
+      tqInFlight.delete(inKey);
     }
   }
   ti = false;
   if (tq.length && ver === qVersion) pq();
 }
 function qt(t, c = 'v') {
-  // 去重：如果队列中已有相同文本的任务，跳过避免重复翻译
+  const key = `${c}:${t}`;
+  if (tqInFlight.has(key)) return;
   if (tq.some(item => item.text === t && item.container === c)) return;
   tq.push({ text: t, container: c });
   pq();
@@ -437,8 +505,11 @@ async function doK() {
   const b = $('kb');
   b.disabled = true; b.textContent = '翻译中…';
   try {
-    const r = await translate(t);
-    ad('k', t, r.text, r.src);
+    const chunks = splitText(t);
+    for (const chunk of chunks) {
+      const r = await translate(chunk);
+      ad('k', chunk, r.text, r.src);
+    }
     ki.value = '';
     $('kc').textContent = '0 字';
   } catch (e) { ts('翻译失败：' + (e.message || '网络异常')); }
@@ -544,7 +615,7 @@ async function doO() {
 </html>'''
 
 # ============================================================
-#  HTTP 服务器 — v2.1: 修复 allow_reuse_address 时序
+#  HTTP 服务器 — v2.2: 修复 allow_reuse_address 时序
 # ============================================================
 
 class ReusableTCPServer(socketserver.TCPServer):
@@ -594,6 +665,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', len(HTML_BODY))
         self.send_header('Cache-Control', 'no-cache')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
         self.end_headers()
         self.wfile.write(HTML_BODY)
 
@@ -602,18 +676,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_header('Content-Length', len(HTML_BODY))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'no-referrer')
         self.end_headers()
 
     def log_message(self, fmt, *args):
         pass  # 静默
 
 
-def find_port(start=9090):
+def find_port(host='127.0.0.1', start=9090):
     """找一个可用端口，全部占用时抛出 RuntimeError"""
     for p in range(start, start + 20):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('127.0.0.1', p))
+                s.bind((host, p))
                 return p
         except OSError:
             continue
@@ -622,59 +699,90 @@ def find_port(start=9090):
     )
 
 
+def get_local_ip():
+    """获取本机局域网 IP"""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('8.8.8.8', 80))
+            return s.getsockname()[0]
+    except Exception:
+        return '127.0.0.1'
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='藏语→中文实时翻译工具')
+    parser.add_argument('--host', default='127.0.0.1', help='监听地址（默认 127.0.0.1）')
+    parser.add_argument('--port', type=int, default=9090, help='监听端口（默认 9090）')
+    args, _ = parser.parse_known_args()
+    return args
+
+
 def main():
-    port = find_port()
-    url = f'http://127.0.0.1:{port}'
+    args = parse_args()
+    host = args.host
+    port_start = args.port
+
+    port = find_port(host, port_start)
+    url = f'http://{host}:{port}'
 
     print()
     print("  ╔══════════════════════════════════════╗")
     print("  ║  🏔️  藏语→中文 实时翻译  桌面版 v2.2 ║")
     print("  ╠══════════════════════════════════════╣")
     print(f"  ║  地址: {url:<28s} ║")
+    if host == '0.0.0.0':
+        local_ip = get_local_ip()
+        lan_url = f'http://{local_ip}:{port}'
+        print(f"  ║  局域网: {lan_url:<26s} ║")
     print("  ║  状态: ✅ 运行中                      ║")
     print("  ║  退出: Ctrl+C                        ║")
     print("  ╚══════════════════════════════════════╝")
     print()
 
     # 启动服务 — 使用 ReusableTCPServer 修复端口复用
-    with ReusableTCPServer(('127.0.0.1', port), Handler) as server:
+    with ReusableTCPServer((host, port), Handler) as server:
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
 
-        # 等待服务器就绪（最多 2 秒）
+        # I-6: 等待服务器就绪（最多 2 秒），超时时提示手动访问
+        server_ready = False
         for _ in range(20):
             try:
-                with socket.create_connection(('127.0.0.1', port), timeout=0.1):
+                with socket.create_connection((host if host != '0.0.0.0' else '127.0.0.1', port), timeout=0.1):
+                    server_ready = True
                     break
             except OSError:
                 time.sleep(0.1)
 
-        # 打开浏览器（检查返回值 + 多种回退方式）
-        opened = False
-        try:
-            opened = webbrowser.open(url)
-        except Exception:
-            pass
-
-        if not opened:
-            # 回退：尝试系统命令直接打开
+        if not server_ready:
+            print(f"  ⚠️ 服务器启动超时，请手动访问 {url}")
+        else:
+            # 打开浏览器（检查返回值 + 多种回退方式）
+            opened = False
             try:
-                if sys.platform == 'darwin':
-                    subprocess.Popen(['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    opened = True
-                elif sys.platform == 'win32':
-                    os.startfile(url)
-                    opened = True
-                elif sys.platform.startswith('linux'):
-                    subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    opened = True
+                opened = webbrowser.open(url)
             except Exception:
                 pass
 
-        if opened:
-            print("  ✅ 已在浏览器中打开翻译页面")
-        else:
-            print(f"  ⚠️  浏览器未自动打开，请手动访问: {url}")
+            if not opened:
+                # 回退：尝试系统命令直接打开
+                try:
+                    if sys.platform == 'darwin':
+                        subprocess.Popen(['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        opened = True
+                    elif sys.platform == 'win32':
+                        os.startfile(url)
+                        opened = True
+                    elif sys.platform.startswith('linux'):
+                        subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        opened = True
+                except Exception:
+                    pass
+
+            if opened:
+                print("  ✅ 已在浏览器中打开翻译页面")
+            else:
+                print(f"  ⚠️  浏览器未自动打开，请手动访问: {url}")
 
         print()
         print("  功能:")
@@ -682,7 +790,7 @@ def main():
         print("    ⌨️  键盘  — 输入/粘贴藏文文本，点击翻译")
         print("    📷  OCR  — 上传含藏文图片，识别+翻译")
         print()
-        print("  v2.1 优化:")
+        print("  v2.2 优化:")
         print("    ✅ 端口复用修复")
         print("    ✅ 翻译队列并发修复")
         print("    ✅ 移除不可靠的 MyMemory 引擎")

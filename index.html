@@ -87,8 +87,11 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
 <body>
 
 <div class="hd">
-  <div class="logo"><i>🏔️</i><span>藏语→中文 实时翻译</span></div>
-  <div class="sp" id="sp" role="status" aria-label="连接状态：就绪"><b></b><span id="st">就绪</span></div>
+  <div class="logo"><i>🏔️</i><span id="langTitle">藏语→中文 实时翻译</span></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="langSwitch" onclick="switchLang()" style="background:transparent;border:1px solid var(--bd);color:var(--tx2);padding:4px 10px;border-radius:var(--rs);cursor:pointer;font-size:16px;transition:all .2s" title="切换翻译方向">⇄</button>
+    <div class="sp" id="sp" role="status" aria-label="连接状态：就绪"><b></b><span id="st">就绪</span></div>
+  </div>
 </div>
 
 <div class="tb" role="tablist" aria-label="翻译模式选择">
@@ -145,6 +148,8 @@ const CACHE_MAX = 500; // localStorage 缓存上限
 let qVersion = 0; // 翻译队列版本号，切换标签页时递增取消旧任务
 let tesseractLoaded = false; // Tesseract.js 延迟加载标志
 let tesseractLoading = null; // Promise 锁，防止并发加载
+let langDirection = 'bo2zh'; // 翻译方向: bo2zh 或 zh2bo
+const tqInFlight = new Set(); // 在途翻译任务追踪，防止重复入队
 
 // ============================================================
 //  Cache Persistence — localStorage 持久化翻译缓存
@@ -172,6 +177,59 @@ function saveCache() {
 }
 // 初始化时加载缓存
 loadCache();
+
+// ============================================================
+//  LRU Cache — I-2: 访问时移到 Map 末尾
+// ============================================================
+function lruGet(key) {
+  if (!tc.has(key)) return undefined;
+  const value = tc.get(key);
+  tc.delete(key);
+  tc.set(key, value);
+  return value;
+}
+
+// ============================================================
+//  Text Splitting — I-3: 大文本按藏文句末标点分段
+// ============================================================
+function splitText(text, maxLen = 4000) {
+  if (text.length <= maxLen) return [text];
+  const segments = [];
+  const parts = text.split(/(?<=།)\s*/);
+  let current = '';
+  for (const part of parts) {
+    if ((current + part).length > maxLen && current) {
+      segments.push(current.trim());
+      current = part;
+    } else {
+      current += (current ? ' ' : '') + part;
+    }
+  }
+  if (current.trim()) segments.push(current.trim());
+  return segments.length ? segments : [text];
+}
+
+// ============================================================
+//  Language Direction — F-1: 切换翻译方向
+// ============================================================
+function switchLang() {
+  langDirection = langDirection === 'bo2zh' ? 'zh2bo' : 'bo2zh';
+  const title = $('langTitle');
+  const ki = $('ki');
+  if (langDirection === 'bo2zh') {
+    title.textContent = '藏语→中文 实时翻译';
+    ki.placeholder = '在此输入或粘贴藏文…';
+    ki.style.fontFamily = '"Noto Sans Tibetan","Microsoft Himalaya",serif';
+  } else {
+    title.textContent = '中文→藏语 实时翻译';
+    ki.placeholder = '在此输入或粘贴中文…';
+    ki.style.fontFamily = '-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif';
+  }
+  // 切换方向时清空翻译缓存
+  tc.clear();
+  try { localStorage.removeItem(CACHE_KEY); } catch (_) {}
+  ts('已切换为 ' + (langDirection === 'bo2zh' ? '藏语→中文' : '中文→藏语'));
+}
 
 // ============================================================
 //  Toast & Status
@@ -243,7 +301,7 @@ function clr(c) {
 
 // ============================================================
 //  Translation Engine (Google only — MyMemory removed)
-//  v2.1: 添加 10s 超时，移除不可靠的 MyMemory
+//  v2.2: 添加 10s 超时，移除不可靠的 MyMemory
 // ============================================================
 async function translateGoogle(text, timeout = 10000) {
   const maxRetries = 2;
@@ -251,8 +309,10 @@ async function translateGoogle(text, timeout = 10000) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
+      const sl = langDirection === 'bo2zh' ? 'bo' : 'zh-CN';
+      const tl = langDirection === 'bo2zh' ? 'zh-CN' : 'bo';
       const r = await fetch(
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=bo&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`,
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`,
         { signal: controller.signal }
       );
       if (!r.ok) throw new Error('Google HTTP ' + r.status);
@@ -274,7 +334,7 @@ async function translateGoogle(text, timeout = 10000) {
 async function translate(text) {
   if (!text.trim()) return { text: '', src: 'none' };
   const key = text.trim();
-  if (tc.has(key)) return { text: tc.get(key), src: 'cache' };
+  if (tc.has(key)) return { text: lruGet(key), src: 'cache' };
 
   const t = await translateGoogle(text);
   tc.set(key, t);
@@ -290,6 +350,8 @@ async function pq() {
   while (tq.length) {
     if (ver !== qVersion) { tq.length = 0; break; }
     const { text, container } = tq.shift();
+    const inKey = `${container}:${text}`;
+    tqInFlight.add(inKey);
     try {
       const r = await translate(text);
       if (ver !== qVersion) break;
@@ -297,13 +359,16 @@ async function pq() {
     } catch (e) {
       console.warn('Translation failed:', e);
       ts('翻译失败：' + (e.message || '网络异常'));
+    } finally {
+      tqInFlight.delete(inKey);
     }
   }
   ti = false;
   if (tq.length && ver === qVersion) pq();
 }
 function qt(t, c = 'v') {
-  // 去重：如果队列中已有相同文本的任务，跳过避免重复翻译
+  const key = `${c}:${t}`;
+  if (tqInFlight.has(key)) return;
   if (tq.some(item => item.text === t && item.container === c)) return;
   tq.push({ text: t, container: c });
   pq();
@@ -392,8 +457,11 @@ async function doK() {
   const b = $('kb');
   b.disabled = true; b.textContent = '翻译中…';
   try {
-    const r = await translate(t);
-    ad('k', t, r.text, r.src);
+    const chunks = splitText(t);
+    for (const chunk of chunks) {
+      const r = await translate(chunk);
+      ad('k', chunk, r.text, r.src);
+    }
     ki.value = '';
     $('kc').textContent = '0 字';
   } catch (e) { ts('翻译失败：' + (e.message || '网络异常')); }

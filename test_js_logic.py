@@ -185,5 +185,26 @@ class TestQueueVersionAndTesseract(unittest.TestCase):
         self.assertIn("async function ensureTesseract()", JS)
 
 
+class TestNewFunctions(unittest.TestCase):
+    """7. 检查 v2.2 新增函数和变量"""
+
+    def test_lruGet_function(self):
+        """I-2: LRU 缓存访问函数"""
+        self.assertIn("function lruGet(", JS)
+
+    def test_splitText_function(self):
+        """I-3: 大文本分段函数"""
+        self.assertIn("function splitText(", JS)
+
+    def test_switchLang_function(self):
+        """F-1: 语言方向切换函数"""
+        self.assertIn("function switchLang(", JS)
+
+    def test_tqInFlight_variable(self):
+        """在途翻译任务追踪变量"""
+        self.assertIn("tqInFlight", JS)
+        self.assertIn("new Set()", JS)
+
+
 if __name__ == "__main__":
     unittest.main()

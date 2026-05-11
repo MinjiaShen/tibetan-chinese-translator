@@ -273,5 +273,17 @@ class TestMainFunction(unittest.TestCase):
         self.assertTrue(callable(mod.main))
 
 
+class TestArgparseSupport(unittest.TestCase):
+    """11. 命令行参数支持"""
+
+    def test_has_argparse_support(self):
+        """验证支持 --host 和 --port 命令行参数"""
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tibetan-translator.py')) as f:
+            content = f.read()
+        self.assertIn('argparse', content)
+        self.assertIn('--host', content)
+        self.assertIn('--port', content)
+
+
 if __name__ == "__main__":
     unittest.main()

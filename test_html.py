@@ -177,6 +177,16 @@ class TestHTMLConsistency(unittest.TestCase):
         self.assertEqual(len(ids_embedded), len(ids_index),
                          "Embedded HTML and index.html have different number of IDs")
 
+    def test_both_have_same_js_functions(self):
+        """验证两个 HTML 文件包含相同的 JS 函数签名"""
+        func_pattern = r'(?:async\s+)?function\s+(\w+)\s*\('
+        embedded_funcs = set(re.findall(func_pattern, HTML))
+        index_funcs = set(re.findall(func_pattern, INDEX_HTML))
+        self.assertEqual(embedded_funcs, index_funcs,
+                         f"JS function mismatch:\n"
+                         f"  Only in embedded: {embedded_funcs - index_funcs}\n"
+                         f"  Only in index.html: {index_funcs - embedded_funcs}")
+
 
 if __name__ == "__main__":
     unittest.main()
