@@ -129,7 +129,7 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
   </div>
 </div>
 
-<div class="ft">藏语→中文实时翻译 · 桌面版 v2.1</div>
+<div class="ft">藏语→中文实时翻译 · 桌面版 v2.2</div>
 <div class="tst" id="tst" role="alert" aria-live="assertive"></div>
 
 <script>
@@ -144,6 +144,7 @@ const CACHE_KEY = 'tibetan_translate_cache';
 const CACHE_MAX = 500; // localStorage 缓存上限
 let qVersion = 0; // 翻译队列版本号，切换标签页时递增取消旧任务
 let tesseractLoaded = false; // Tesseract.js 延迟加载标志
+let tesseractLoading = null; // Promise 锁，防止并发加载
 
 // ============================================================
 //  Cache Persistence — localStorage 持久化翻译缓存
@@ -259,7 +260,6 @@ async function translateGoogle(text, timeout = 10000) {
       if (d?.[0]) return d[0].map(s => s[0]).join('');
       throw new Error('Google empty response');
     } catch (e) {
-      clearTimeout(timer);
       if (attempt < maxRetries - 1) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
@@ -332,8 +332,20 @@ function initRec() {
     if (final) { $('lt').textContent = ''; qt(final); }
   };
   r.onerror = (e) => {
-    if (e.error === 'not-allowed') { ts('❌ 请允许麦克风权限'); ss('err', '麦克风被拒绝'); stopRec(); }
-    else if (e.error === 'network') { ts('⚠️ 网络错误'); ss('err', '网络错误'); }
+    const errMap = {
+      'not-allowed':      ['❌ 请允许麦克风权限', '麦克风被拒绝'],
+      'network':          ['⚠️ 网络错误，语音识别需要联网', '网络错误'],
+      'no-speech':        ['🔇 未检测到语音，请再试一次', '未检测到语音'],
+      'aborted':          ['⏹️ 语音识别被中止', '已中止'],
+      'audio-capture':    ['🎙️ 未检测到麦克风硬件', '无麦克风'],
+      'service-not-allowed': ['🚫 语音识别服务不可用，请检查网络', '服务不可用'],
+      'bad-grammar':      ['⚠️ 语音识别语法错误', '语法错误'],
+      'language-not-supported': ['⚠️ 浏览器不支持藏语语音识别', '语言不支持'],
+    };
+    const [msg, status] = errMap[e.error] || ['⚠️ 语音识别异常: ' + e.error, '识别异常'];
+    ts(msg); ss('err', status);
+    // 致命错误自动停止录音
+    if (['not-allowed', 'audio-capture', 'service-not-allowed'].includes(e.error)) stopRec();
   };
   r.onend = () => { if (rec) { try { r.start(); } catch (e) { stopRec(); } } };
   return r;
@@ -360,7 +372,10 @@ function toggleRec() { rec ? stopRec() : startRec(); }
 
 $('mb').addEventListener('click', toggleRec);
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && !e.repeat && e.target === document.body) { e.preventDefault(); toggleRec(); }
+  // B-7: 排除可交互元素，避免输入框获焦时空格键误触发录音
+  const tag = e.target.tagName;
+  const inInput = ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag) || e.target.isContentEditable;
+  if (e.code === 'Space' && !e.repeat && !inInput) { e.preventDefault(); toggleRec(); }
 });
 
 // ============================================================
@@ -390,17 +405,20 @@ async function doK() {
 // ============================================================
 const uz = $('uz'), opv = $('opv'), ob = $('ob'), ocb = $('ocb'), opr = $('opr'), opt = $('opt');
 
-// Tesseract.js 延迟加载：仅首次使用 OCR 时加载
+// Tesseract.js 延迟加载：仅首次使用 OCR 时加载（Promise 锁防并发）
 async function ensureTesseract() {
   if (tesseractLoaded && typeof Tesseract !== 'undefined') return true;
+  // 已有加载进行中，复用同一 Promise 防止重复注入 script
+  if (tesseractLoading) return tesseractLoading;
   opt.textContent = '正在加载 OCR 引擎（约 1MB）…';
-  return new Promise((resolve, reject) => {
+  tesseractLoading = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.onload = () => { tesseractLoaded = true; resolve(true); };
-    script.onerror = () => reject(new Error('OCR 引擎加载失败，请检查网络'));
+    script.onload = () => { tesseractLoaded = true; tesseractLoading = null; resolve(true); };
+    script.onerror = () => { tesseractLoading = null; reject(new Error('OCR 引擎加载失败，请检查网络')); };
     document.head.appendChild(script);
   });
+  return tesseractLoading;
 }
 
 uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('drag'); });

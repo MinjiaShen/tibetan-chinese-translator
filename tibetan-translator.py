@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 ╔══════════════════════════════════════════╗
-║   🏔️  藏语→中文 实时翻译  桌面版 v2.1    ║
+║   🏔️  藏语→中文 实时翻译  桌面版 v2.2    ║
 ║                                          ║
 ║   双击运行 · 自动开浏览器 · Ctrl+C 退出   ║
 ╚══════════════════════════════════════════╝
@@ -15,7 +15,7 @@
 依赖: Python 3.8+ (无需安装任何第三方库)
 系统: Windows / macOS / Linux
 
-v2.1 更新:
+v2.2 更新:
   - 修复 TCPServer allow_reuse_address 时序 bug (端口复用)
   - 修复翻译队列并发 bug (ti 标志未正确设置)
   - 移除 MyMemory 翻译引擎 (藏语返回垃圾数据)
@@ -174,7 +174,7 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
   </div>
 </div>
 
-<div class="ft">藏语→中文实时翻译 · 桌面版 v2.1</div>
+<div class="ft">藏语→中文实时翻译 · 桌面版 v2.2</div>
 <div class="tst" id="tst" role="alert" aria-live="assertive"></div>
 
 <script>
@@ -189,6 +189,7 @@ const CACHE_KEY = 'tibetan_translate_cache';
 const CACHE_MAX = 500; // localStorage 缓存上限
 let qVersion = 0; // 翻译队列版本号，切换标签页时递增取消旧任务
 let tesseractLoaded = false; // Tesseract.js 延迟加载标志
+let tesseractLoading = null; // Promise 锁，防止并发加载
 
 // ============================================================
 //  Cache Persistence — localStorage 持久化翻译缓存
@@ -304,7 +305,6 @@ async function translateGoogle(text, timeout = 10000) {
       if (d?.[0]) return d[0].map(s => s[0]).join('');
       throw new Error('Google empty response');
     } catch (e) {
-      clearTimeout(timer);
       if (attempt < maxRetries - 1) {
         await new Promise(r => setTimeout(r, 1000));
         continue;
@@ -377,8 +377,20 @@ function initRec() {
     if (final) { $('lt').textContent = ''; qt(final); }
   };
   r.onerror = (e) => {
-    if (e.error === 'not-allowed') { ts('❌ 请允许麦克风权限'); ss('err', '麦克风被拒绝'); stopRec(); }
-    else if (e.error === 'network') { ts('⚠️ 网络错误'); ss('err', '网络错误'); }
+    const errMap = {
+      'not-allowed':      ['❌ 请允许麦克风权限', '麦克风被拒绝'],
+      'network':          ['⚠️ 网络错误，语音识别需要联网', '网络错误'],
+      'no-speech':        ['🔇 未检测到语音，请再试一次', '未检测到语音'],
+      'aborted':          ['⏹️ 语音识别被中止', '已中止'],
+      'audio-capture':    ['🎙️ 未检测到麦克风硬件', '无麦克风'],
+      'service-not-allowed': ['🚫 语音识别服务不可用，请检查网络', '服务不可用'],
+      'bad-grammar':      ['⚠️ 语音识别语法错误', '语法错误'],
+      'language-not-supported': ['⚠️ 浏览器不支持藏语语音识别', '语言不支持'],
+    };
+    const [msg, status] = errMap[e.error] || ['⚠️ 语音识别异常: ' + e.error, '识别异常'];
+    ts(msg); ss('err', status);
+    // 致命错误自动停止录音
+    if (['not-allowed', 'audio-capture', 'service-not-allowed'].includes(e.error)) stopRec();
   };
   r.onend = () => { if (rec) { try { r.start(); } catch (e) { stopRec(); } } };
   return r;
@@ -405,7 +417,10 @@ function toggleRec() { rec ? stopRec() : startRec(); }
 
 $('mb').addEventListener('click', toggleRec);
 document.addEventListener('keydown', e => {
-  if (e.code === 'Space' && !e.repeat && e.target === document.body) { e.preventDefault(); toggleRec(); }
+  // B-7: 排除可交互元素，避免输入框获焦时空格键误触发录音
+  const tag = e.target.tagName;
+  const inInput = ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(tag) || e.target.isContentEditable;
+  if (e.code === 'Space' && !e.repeat && !inInput) { e.preventDefault(); toggleRec(); }
 });
 
 // ============================================================
@@ -435,17 +450,20 @@ async function doK() {
 // ============================================================
 const uz = $('uz'), opv = $('opv'), ob = $('ob'), ocb = $('ocb'), opr = $('opr'), opt = $('opt');
 
-// Tesseract.js 延迟加载：仅首次使用 OCR 时加载
+// Tesseract.js 延迟加载：仅首次使用 OCR 时加载（Promise 锁防并发）
 async function ensureTesseract() {
   if (tesseractLoaded && typeof Tesseract !== 'undefined') return true;
+  // 已有加载进行中，复用同一 Promise 防止重复注入 script
+  if (tesseractLoading) return tesseractLoading;
   opt.textContent = '正在加载 OCR 引擎（约 1MB）…';
-  return new Promise((resolve, reject) => {
+  tesseractLoading = new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    script.onload = () => { tesseractLoaded = true; resolve(true); };
-    script.onerror = () => reject(new Error('OCR 引擎加载失败，请检查网络'));
+    script.onload = () => { tesseractLoaded = true; tesseractLoading = null; resolve(true); };
+    script.onerror = () => { tesseractLoading = null; reject(new Error('OCR 引擎加载失败，请检查网络')); };
     document.head.appendChild(script);
   });
+  return tesseractLoading;
 }
 
 uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('drag'); });
@@ -545,8 +563,22 @@ FAVICON_ICO = (
 )
 
 
+# B-5: 优先使用同目录下的 index.html（防止版本漂移），内嵌 HTML 作为 fallback
+def _load_html():
+    """加载 HTML：优先读取 index.html 文件，不存在则用内嵌 HTML"""
+    try:
+        html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return HTML
+
+# 模块级缓存 HTML 字节流（B-6: 避免每次请求重新编码）
+HTML_BODY = _load_html().encode('utf-8')
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
-    """HTTP Handler — favicon.ico 返回 1x1 透明像素，其他返回内嵌 HTML"""
+    """HTTP Handler — favicon.ico 返回 1x1 透明像素，其他返回 HTML"""
 
     def do_GET(self):
         if self.path == '/favicon.ico':
@@ -558,20 +590,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(FAVICON_ICO)
             return
 
-        body = HTML.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.send_header('Content-Length', len(body))
+        self.send_header('Content-Length', len(HTML_BODY))
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(HTML_BODY)
 
     def do_HEAD(self):
         """支持 HEAD 请求（健康检查等场景）"""
-        body = HTML.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.send_header('Content-Length', len(body))
+        self.send_header('Content-Length', len(HTML_BODY))
         self.end_headers()
 
     def log_message(self, fmt, *args):
@@ -579,7 +609,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def find_port(start=9090):
-    """找一个可用端口"""
+    """找一个可用端口，全部占用时抛出 RuntimeError"""
     for p in range(start, start + 20):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -587,7 +617,9 @@ def find_port(start=9090):
                 return p
         except OSError:
             continue
-    return start
+    raise RuntimeError(
+        f'端口 {start}-{start + 19} 全部被占用，请关闭占用端口的程序后重试'
+    )
 
 
 def main():
@@ -596,7 +628,7 @@ def main():
 
     print()
     print("  ╔══════════════════════════════════════╗")
-    print("  ║  🏔️  藏语→中文 实时翻译  桌面版 v2.1 ║")
+    print("  ║  🏔️  藏语→中文 实时翻译  桌面版 v2.2 ║")
     print("  ╠══════════════════════════════════════╣")
     print(f"  ║  地址: {url:<28s} ║")
     print("  ║  状态: ✅ 运行中                      ║")

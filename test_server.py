@@ -164,7 +164,8 @@ class TestHandlerHEAD(unittest.TestCase):
         conn.request("HEAD", "/")
         resp = conn.getresponse()
         cl = int(resp.getheader("Content-Length"))
-        expected = len(mod.HTML.encode("utf-8"))
+        # B-5: 服务器优先读取 index.html，HTML_BODY 为实际服务内容
+        expected = len(getattr(mod, 'HTML_BODY', mod.HTML.encode('utf-8')))
         self.assertEqual(cl, expected)
         conn.close()
 
