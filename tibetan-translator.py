@@ -133,49 +133,49 @@ body{font-family:-apple-system,"SF Pro Display","PingFang SC","Microsoft YaHei",
 
 <div class="hd">
   <div class="logo"><i>🏔️</i><span>藏语→中文 实时翻译</span></div>
-  <div class="sp" id="sp"><b></b><span id="st">就绪</span></div>
+  <div class="sp" id="sp" role="status" aria-label="连接状态：就绪"><b></b><span id="st">就绪</span></div>
 </div>
 
-<div class="tb">
-  <button class="t at" data-t="v"><i>🎙️</i> 语音</button>
-  <button class="t" data-t="k"><i>⌨️</i> 键盘</button>
-  <button class="t" data-t="o"><i>📷</i> 图片OCR</button>
+<div class="tb" role="tablist" aria-label="翻译模式选择">
+  <button class="t at" data-t="v" role="tab" aria-selected="true" aria-controls="pv"><i>🎙️</i> 语音</button>
+  <button class="t" data-t="k" role="tab" aria-selected="false" aria-controls="pk"><i>⌨️</i> 键盘</button>
+  <button class="t" data-t="o" role="tab" aria-selected="false" aria-controls="po"><i>📷</i> 图片OCR</button>
 </div>
 
 <div class="mn">
-  <div class="pn at" id="pv">
-    <div class="sa" id="vs"><div class="emp"><div class="ic">🎙️</div><p>点击下方麦克风按钮<br>开始说藏语，实时显示中文字幕</p><div class="ht">💡 空格键快速开始/停止</div></div></div>
+  <div class="pn at" id="pv" role="tabpanel" aria-labelledby="tab-v">
+    <div class="sa" id="vs" aria-live="polite" aria-label="语音翻译字幕区域"><div class="emp"><div class="ic">🎙️</div><p>点击下方麦克风按钮<br>开始说藏语，实时显示中文字幕</p><div class="ht">💡 空格键快速开始/停止</div></div></div>
     <div class="ib">
-      <button class="mb" id="mb" title="开始/停止录音">🎤</button>
+      <button class="mb" id="mb" title="开始/停止录音" aria-label="开始录音" aria-pressed="false">🎤</button>
       <div class="mi"><div class="l1">藏语语音 → 中文字幕</div><div class="l2" id="lt"></div></div>
       <button class="bc" onclick="clr('v')">清空</button>
     </div>
   </div>
 
-  <div class="pn" id="pk">
-    <div class="sa" id="ks"><div class="emp"><div class="ic">⌨️</div><p>在下方输入藏文，点击翻译<br>支持粘贴大段藏语文本</p><div class="ht">💡 Ctrl+Enter 快速翻译</div></div></div>
+  <div class="pn" id="pk" role="tabpanel" aria-labelledby="tab-k">
+    <div class="sa" id="ks" aria-live="polite" aria-label="键盘翻译字幕区域"><div class="emp"><div class="ic">⌨️</div><p>在下方输入藏文，点击翻译<br>支持粘贴大段藏语文本</p><div class="ht">💡 Ctrl+Enter 快速翻译</div></div></div>
     <div class="kw">
       <textarea class="kt" id="ki" placeholder="在此输入或粘贴藏文…" rows="3"></textarea>
-      <div class="ka"><span class="lt" id="kc">0 字</span><button class="bm" id="kb" onclick="doK()">翻译</button></div>
+      <div class="ka"><span class="lt" id="kc">0 字</span><button class="bm" id="kb" onclick="doK()" aria-label="翻译藏文">翻译</button></div>
     </div>
   </div>
 
-  <div class="pn" id="po">
-    <div class="sa" id="os"><div class="emp"><div class="ic">📷</div><p>上传含有藏文的图片<br>自动识别藏文并翻译为中文</p><div class="ht">💡 支持拍照、截图、扫描件</div></div></div>
+  <div class="pn" id="po" role="tabpanel" aria-labelledby="tab-o">
+    <div class="sa" id="os" aria-live="polite" aria-label="OCR翻译字幕区域"><div class="emp"><div class="ic">📷</div><p>上传含有藏文的图片<br>自动识别藏文并翻译为中文</p><div class="ht">💡 支持拍照、截图、扫描件</div></div></div>
     <div class="ow">
       <div class="uz" id="uz"><input type="file" id="fi" accept="image/*" onchange="hf(event)"><div class="ic">📤</div><p>点击上传或拖拽图片到此处</p></div>
       <img class="opv" id="opv">
-      <div class="opr" id="opr"><div class="spn"></div><span id="opt">正在识别藏文…</span></div>
+      <div class="opr" id="opr" role="status" aria-live="polite" aria-label="OCR识别状态"><div class="spn"></div><span id="opt">正在识别藏文…</span></div>
       <div class="oa">
         <button class="bo bs" id="ocb" onclick="clrO()" style="display:none">清除图片</button>
-        <button class="bo" id="ob" onclick="doO()" disabled>识别并翻译</button>
+        <button class="bo" id="ob" onclick="doO()" disabled aria-label="识别并翻译图片中的藏文">识别并翻译</button>
       </div>
     </div>
   </div>
 </div>
 
 <div class="ft">藏语→中文实时翻译 · 桌面版 v2.1</div>
-<div class="tst" id="tst"></div>
+<div class="tst" id="tst" role="alert" aria-live="assertive"></div>
 
 <script>
 // ============================================================
@@ -185,8 +185,37 @@ const $ = id => document.getElementById(id);
 let rec = false, RC = null;
 let tq = [], ti = false, ois = null;
 const tc = new Map();
+const CACHE_KEY = 'tibetan_translate_cache';
+const CACHE_MAX = 500; // localStorage 缓存上限
 let qVersion = 0; // 翻译队列版本号，切换标签页时递增取消旧任务
 let tesseractLoaded = false; // Tesseract.js 延迟加载标志
+
+// ============================================================
+//  Cache Persistence — localStorage 持久化翻译缓存
+// ============================================================
+function loadCache() {
+  try {
+    const saved = localStorage.getItem(CACHE_KEY);
+    if (saved) {
+      const entries = JSON.parse(saved);
+      entries.forEach(([k, v]) => tc.set(k, v));
+      console.log(`[Cache] 从 localStorage 恢复 ${entries.length} 条缓存`);
+    }
+  } catch (e) { /* JSON 解析失败或 localStorage 不可用，忽略 */ }
+}
+function saveCache() {
+  try {
+    const entries = Array.from(tc.entries());
+    // 只保留最近 CACHE_MAX 条（Map 迭代顺序即插入顺序）
+    const toSave = entries.slice(-CACHE_MAX);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(toSave));
+  } catch (e) {
+    // quota exceeded — 清除旧缓存后重试
+    try { localStorage.removeItem(CACHE_KEY); } catch (_) { }
+  }
+}
+// 初始化时加载缓存
+loadCache();
 
 // ============================================================
 //  Toast & Status
@@ -202,6 +231,7 @@ function ss(s, t) {
   const p = $('sp');
   p.className = 'sp' + (s === 'on' ? ' on' : s === 'err' ? ' err' : '');
   $('st').textContent = t;
+  p.setAttribute('aria-label', '连接状态：' + t); // 更新状态指示器 ARIA 标签
 }
 
 // ============================================================
@@ -209,9 +239,10 @@ function ss(s, t) {
 // ============================================================
 document.querySelectorAll('.t').forEach(b => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.t').forEach(x => x.classList.remove('at'));
+    document.querySelectorAll('.t').forEach(x => { x.classList.remove('at'); x.setAttribute('aria-selected', 'false'); });
     document.querySelectorAll('.pn').forEach(x => x.classList.remove('at'));
     b.classList.add('at');
+    b.setAttribute('aria-selected', 'true'); // 更新标签页 ARIA 选中状态
     $('p' + b.dataset.t).classList.add('at');
     // 切换标签页时取消队列中旧的翻译任务
     qVersion++;
@@ -259,19 +290,29 @@ function clr(c) {
 //  v2.1: 添加 10s 超时，移除不可靠的 MyMemory
 // ============================================================
 async function translateGoogle(text, timeout = 10000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    const r = await fetch(
-      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=bo&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`,
-      { signal: controller.signal }
-    );
-    if (!r.ok) throw new Error('Google HTTP ' + r.status);
-    const d = await r.json();
-    if (d?.[0]) return d[0].map(s => s[0]).join('');
-    throw new Error('Google empty response');
-  } finally {
-    clearTimeout(timer);
+  const maxRetries = 2;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const r = await fetch(
+        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=bo&tl=zh-CN&dt=t&q=${encodeURIComponent(text)}`,
+        { signal: controller.signal }
+      );
+      if (!r.ok) throw new Error('Google HTTP ' + r.status);
+      const d = await r.json();
+      if (d?.[0]) return d[0].map(s => s[0]).join('');
+      throw new Error('Google empty response');
+    } catch (e) {
+      clearTimeout(timer);
+      if (attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -280,33 +321,35 @@ async function translate(text) {
   const key = text.trim();
   if (tc.has(key)) return { text: tc.get(key), src: 'cache' };
 
-  try {
-    const t = await translateGoogle(text);
-    tc.set(key, t);
-    return { text: t, src: 'google' };
-  } catch (e) {
-    console.warn('Google failed:', e.message);
-  }
-
-  return { text: '[翻译失败] ' + text, src: 'none' };
+  const t = await translateGoogle(text);
+  tc.set(key, t);
+  saveCache(); // 翻译成功后持久化缓存到 localStorage
+  return { text: t, src: 'google' };
 }
 
-// v2.1: 修复并发 bug — 正确设置 ti 标志 + 版本号检查
+// v2.2: 修复并发竞态 — 翻译失败时抛异常 + 队列续处理
 async function pq() {
-  if (ti || !tq.length) return;
+  if (ti) return;
   ti = true;
   const ver = qVersion;
   while (tq.length) {
-    // 版本号变了（标签页切换），丢弃剩余队列
-    if (ver !== qVersion) break;
+    if (ver !== qVersion) { tq.length = 0; break; }
     const { text, container } = tq.shift();
-    const r = await translate(text);
-    if (ver !== qVersion) break; // 翻译完成后再次检查
-    ad(container, text, r.text, r.src);
+    try {
+      const r = await translate(text);
+      if (ver !== qVersion) break;
+      ad(container, text, r.text, r.src);
+    } catch (e) {
+      console.warn('Translation failed:', e);
+      ts('翻译失败：' + (e.message || '网络异常'));
+    }
   }
   ti = false;
+  if (tq.length && ver === qVersion) pq();
 }
 function qt(t, c = 'v') {
+  // 去重：如果队列中已有相同文本的任务，跳过避免重复翻译
+  if (tq.some(item => item.text === t && item.container === c)) return;
   tq.push({ text: t, container: c });
   pq();
 }
@@ -323,7 +366,7 @@ function initRec() {
   r.interimResults = true;
   r.maxAlternatives = 1;
 
-  r.onstart = () => { ss('on', '正在聆听藏语…'); $('mb').classList.add('rc'); };
+  r.onstart = () => { ss('on', '正在聆听藏语…'); $('mb').classList.add('rc'); $('mb').setAttribute('aria-pressed', 'true'); $('mb').setAttribute('aria-label', '停止录音'); };
   r.onresult = (e) => {
     let interim = '', final = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -352,6 +395,8 @@ function stopRec() {
   rec = false;
   if (RC) { RC.onend = null; try { RC.stop(); } catch (e) { } RC = null; }
   $('mb').classList.remove('rc');
+  $('mb').setAttribute('aria-pressed', 'false'); // 更新麦克风按钮 ARIA 状态
+  $('mb').setAttribute('aria-label', '开始录音');
   $('lt').textContent = '';
   ss('', '就绪');
   ts('⏹️ 已停止录音');
@@ -381,7 +426,7 @@ async function doK() {
     ad('k', t, r.text, r.src);
     ki.value = '';
     $('kc').textContent = '0 字';
-  } catch (e) { ts('翻译失败'); }
+  } catch (e) { ts('翻译失败：' + (e.message || '网络异常')); }
   finally { b.disabled = false; b.textContent = '翻译'; }
 }
 
