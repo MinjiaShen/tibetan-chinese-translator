@@ -233,6 +233,29 @@ ps aux | grep tibetan
 pkill -f tibetan-translator
 ```
 
+### 命令行参数
+
+```bash
+# 查看帮助
+python3 tibetan-translator.py --help
+
+# 自定义端口
+python3 tibetan-translator.py --port 8080
+
+# 局域网共享模式（同一网络下其他设备可访问）
+python3 tibetan-translator.py --host 0.0.0.0
+
+# 自定义监听地址和端口
+python3 tibetan-translator.py --host 0.0.0.0 --port 8080
+```
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--host` | `127.0.0.1` | 监听地址。设为 `0.0.0.0` 可启用局域网共享模式 |
+| `--port` | `9090` | 监听端口。端口被占用时自动尝试下一个 |
+
+> 💡 局域网模式下，程序会自动检测并显示本机局域网 IP 地址，方便其他设备访问。
+
 ### 运行成功标志
 
 ```
